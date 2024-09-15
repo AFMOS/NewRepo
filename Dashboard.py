@@ -319,7 +319,7 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         xaxis=dict(side='top')
     )
 
-    # Calculate monthly KPIs for Salesman tab
+    # # Calculate monthly KPIs for Salesman tab
     monthly_kpis = filtered_data.groupby('month').agg({
         main_variable: 'sum',
         'customer_code': 'nunique',
@@ -329,6 +329,21 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     # Sort the data by month order
     monthly_kpis['month'] = pd.Categorical(monthly_kpis['month'], categories=month_order, ordered=True)
     monthly_kpis = monthly_kpis.sort_values('month')
+    
+    # Calculate new customers
+    all_customers = set()
+    new_customers = []
+    for i, (_, row) in enumerate(monthly_kpis.iterrows()):
+        if i == 0:  # First month (January)
+            new_customers.append(0)
+            all_customers.update(filtered_data[filtered_data['month'] == row['month']]['customer_code'])
+        else:
+            month_customers = set(filtered_data[filtered_data['month'] == row['month']]['customer_code'])
+            new_month_customers = month_customers - all_customers
+            new_customers.append(len(new_month_customers))
+            all_customers.update(month_customers)
+    
+    monthly_kpis['New Customer'] = new_customers
     
     # Calculate additional KPIs
     monthly_kpis['change%'] = monthly_kpis[main_variable].pct_change() * 100
@@ -340,6 +355,7 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     display_df = pd.DataFrame({
         'Month': monthly_kpis['month'],
         'Sales': monthly_kpis[main_variable],
+        'New Customers': monthly_kpis['New Customer'],
         'Change%': monthly_kpis['change%'],
         'Progress%': monthly_kpis['progress%'],
         'Customers%': monthly_kpis['customers%'],
@@ -460,6 +476,7 @@ else:
         st.write("Monthly KPIs")
         st.dataframe(display_df.style.format({
             'Sales': '{:,.0f}',
+            'New Customers': '{:,.0f}',
             'Change%': '{:+.2f}%',
             'Progress%': '{:.2f}%',
             'Customers%': '{:.2f}%',
