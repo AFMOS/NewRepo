@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import re
 
 # Set the page configuration to wide mode
 st.set_page_config(layout="wide")
@@ -49,11 +50,27 @@ quarter_map = {
     'Q4': ["Oct", "Nov", "Dec"]
 }
 
+def apply_master_filter(df, search_term):
+    if not search_term:
+        return df
+
+    search_term = search_term.lower()
+    mask = pd.Series([False] * len(df))
+    
+    for col in ['customer_code', 'customer_name', 'customer_category', 'salesman', 
+                'item_code', 'item_description', 'item_category', 'month', 'area']:
+        if col in df.columns:
+            mask |= df[col].astype(str).str.lower().str.contains(search_term, regex=True)
+    
+    return df[mask]
+
 def update_dashboard(selected_areas, selected_month, selected_quarter, 
                       selected_customer_categories, selected_salesmen, selected_item_categories,
-                      selected_customer_names, selected_item_description, main_variable):
-    # Filter data based on selections
-    filtered_data = data
+                      selected_customer_names, selected_item_description, main_variable, search_term):
+    # Apply master filter
+    filtered_data = apply_master_filter(data, search_term)
+    
+    # Further filtering based on other selections
     if selected_areas and selected_areas != "None":
         filtered_data = filtered_data[filtered_data['area'] == selected_areas]
     if selected_month and selected_month != "None":
@@ -281,100 +298,85 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
             fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer)
 
 # Streamlit app
-page = st.sidebar.radio("Go to", ["Dashboard", "SM Report"])
+st.markdown("""<h1 style="text-align: center;">📊 Sales Dashboard</h1>""", unsafe_allow_html=True)
 
-if page == "Dashboard":
-    st.markdown("""<h1 style="text-align: center;">📊 Sales Dashboard</h1>""", unsafe_allow_html=True)
-    
-    # Filters aligned to the right
-    st.sidebar.header('Filters')
-    selected_areas = st.sidebar.selectbox('Select Area', options=['None'] + list(data['area'].unique()))
-    selected_month = st.sidebar.selectbox('Select Month', options=['None'] + list(data['month'].unique()))
-    selected_quarter = st.sidebar.selectbox('Select Quarter', options=['None'] + list(quarter_map.keys()))
-    selected_customer_categories = st.sidebar.selectbox('Select Customer Category', options=['None'] + list(data['customer_category'].unique()))
-    selected_salesmen = st.sidebar.selectbox('Select Salesman', options=['None'] + list(data['salesman'].unique()))
-    selected_item_categories = st.sidebar.selectbox('Select Item Category', options=['None'] + list(data['item_category'].unique()))
-    selected_customer_names = st.sidebar.selectbox('Select Customer Name', options=['None'] + list(data['customer_name'].unique()))
-    selected_item_description = st.sidebar.selectbox('Select Item Description', options=['None'] + list(data['item_description'].unique()))
+# Filters aligned to the right
+st.sidebar.header('Filters')
 
-    # Update dashboard based on selections
-    (total_sales, customer_count, total_weight, Cash_count, Credit_count,
-     Cash_percentage, Credit_percentage, fig_area, fig_month, fig_quarter, fig_salesman, 
-     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = update_dashboard(
-        selected_areas, selected_month, selected_quarter, 
-        selected_customer_categories, selected_salesmen, selected_item_categories,
-        selected_customer_names, selected_item_description,
-        main_variable
-    )
+# Add master search filter
+search_term = st.sidebar.text_input("Master Search Filter")
 
-    # Layout with columns for summary statistics
-    col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
+selected_areas = st.sidebar.selectbox('Select Area', options=['None'] + list(data['area'].unique()))
+selected_month = st.sidebar.selectbox('Select Month', options=['None'] + list(data['month'].unique()))
+selected_quarter = st.sidebar.selectbox('Select Quarter', options=['None'] + list(quarter_map.keys()))
+selected_customer_categories = st.sidebar.selectbox('Select Customer Category', options=['None'] + list(data['customer_category'].unique()))
+selected_salesmen = st.sidebar.selectbox('Select Salesman', options=['None'] + list(data['salesman'].unique()))
+selected_item_categories = st.sidebar.selectbox('Select Item Category', options=['None'] + list(data['item_category'].unique()))
+selected_customer_names = st.sidebar.selectbox('Select Customer Name', options=['None'] + list(data['customer_name'].unique()))
+selected_item_description = st.sidebar.selectbox('Select Item Description', options=['None'] + list(data['item_description'].unique()))
 
-    with col1:
-        st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-            <h4 style="margin: 0; font-size: 14px;">Total</h4>
-            <h2 style="margin: 0; font-size: 16px;">
-            {'SAR' if main_variable == 'total' else 'Kg'} {total_sales:,.0f}
-            </h2>
-        </div>
-        """, unsafe_allow_html=True)
+# Update dashboard based on selections
+(total_sales, customer_count, total_weight, Cash_count, Credit_count,
+ Cash_percentage, Credit_percentage, fig_area, fig_month, fig_quarter, fig_salesman, 
+ fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = update_dashboard(
+    selected_areas, selected_month, selected_quarter, 
+    selected_customer_categories, selected_salesmen, selected_item_categories,
+    selected_customer_names, selected_item_description,
+    main_variable, search_term
+)
 
-    with col2:
-        st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-            <h4 style="margin: 0; font-size: 14px;">Customer Count</h4>
-            <h2 style="margin: 0; font-size: 16px;">{customer_count:,}</h2>
-        </div>
-        """, unsafe_allow_html=True)
+# Layout with columns for summary statistics
+col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
 
-    with col3:
-        st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-            <h4 style="margin: 0; font-size: 14px;">Payment Type</h4>
-            <h2 style="margin: 0; font-size: 16px;">Cash: {Cash_count:,} ({Cash_percentage:.1%})</h2>
-            <h2 style="margin: 0; font-size: 16px;">Credit: {Credit_count:,} ({Credit_percentage:.1%})</h2>
-        </div>
-        """, unsafe_allow_html=True)
+with col1:
+    st.markdown(f"""
+    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+        <h4 style="margin: 0; font-size: 14px;">Total</h4>
+        <h2 style="margin: 0; font-size: 16px;">
+        {'SAR' if main_variable == 'total' else 'Kg'} {total_sales:,.0f}
+        </h2>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Display charts side by side and centered
-    st.subheader('')
-    col1, col2, col3, col4 = st.columns([3, 3, 3, 3])  # Adjust column widths to be equal
+with col2:
+    st.markdown(f"""
+    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+        <h4 style="margin: 0; font-size: 14px;">Customer Count</h4>
+        <h2 style="margin: 0; font-size: 16px;">{customer_count:,}</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with col1:
-        st.plotly_chart(fig_area, use_container_width=True)
+with col3:
+    st.markdown(f"""
+    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+        <h4 style="margin: 0; font-size: 14px;">Payment Type</h4>
+        <h2 style="margin: 0; font-size: 16px;">Cash: {Cash_count:,} ({Cash_percentage:.1%})</h2>
+        <h2 style="margin: 0; font-size: 16px;">Credit: {Credit_count:,} ({Credit_percentage:.1%})</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with col2:
-        st.plotly_chart(fig_month, use_container_width=True)
+# Display charts side by side and centered
+st.subheader('')
+col1, col2, col3, col4 = st.columns([3, 3, 3, 3])  # Adjust column widths to be equal
 
-    with col3:
-        st.plotly_chart(fig_quarter, use_container_width=True)
+with col1:
+    st.plotly_chart(fig_area, use_container_width=True)
 
-    with col4:
-        st.plotly_chart(fig_salesman, use_container_width=True)
+with col2:
+    st.plotly_chart(fig_month, use_container_width=True)
 
-    # Add expand/collapse sections for heatmaps
-    with st.expander("Item Category Heatmap", expanded=False):
-        st.plotly_chart(fig_heatmap_item, use_container_width=True)
+with col3:
+    st.plotly_chart(fig_quarter, use_container_width=True)
 
-    with st.expander("Item Description Heatmap", expanded=False):
-        st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
+with col4:
+    st.plotly_chart(fig_salesman, use_container_width=True)
 
-    with st.expander("Customer Heatmap", expanded=False):
-        st.plotly_chart(fig_heatmap_customer, use_container_width=True)
+# Add expand/collapse sections for heatmaps
+with st.expander("Item Category Heatmap", expanded=False):
+    st.plotly_chart(fig_heatmap_item, use_container_width=True)
 
-elif page == "SM":
-    st.markdown("""<h1 style="text-align: center;">📊 SM Report </h1>""", unsafe_allow_html=True)
+with st.expander("Item Description Heatmap", expanded=False):
+    st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
 
-    # Filters aligned to the right
-    st.sidebar.header('Filters')
-    selected_areas = st.sidebar.selectbox('Select Area', options=['None'] + list(data['area'].unique()))
-    selected_month = st.sidebar.selectbox('Select Month', options=['None'] + list(data['month'].unique()))
-    selected_quarter = st.sidebar.selectbox('Select Quarter', options=['None'] + list(quarter_map.keys()))
-    selected_customer_categories = st.sidebar.selectbox('Select Customer Category', options=['None'] + list(data['customer_category'].unique()))
-    selected_salesmen = st.sidebar.selectbox('Select Salesman', options=['None'] + list(data['salesman'].unique()))
-    selected_item_categories = st.sidebar.selectbox('Select Item Category', options=['None'] + list(data['item_category'].unique()))
-    selected_customer_names = st.sidebar.selectbox('Select Customer Name', options=['None'] + list(data['customer_name'].unique()))
-    selected_item_description = st.sidebar.selectbox('Select Item Description', options=['None'] + list(data['item_description'].unique()))
-    
-
+with st.expander("Customer Heatmap", expanded=False):
+    st.plotly_chart(fig_heatmap_customer, use_container_width=True)
