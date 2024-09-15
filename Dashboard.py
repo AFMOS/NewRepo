@@ -319,9 +319,39 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         xaxis=dict(side='top')
     )
 
+    # Calculate monthly KPIs for Salesman tab
+    monthly_kpis = filtered_data.groupby('month').agg({
+        main_variable: 'sum',
+        'customer_code': 'nunique',
+        'item_category': 'nunique'
+    }).reset_index()
+    
+    # Sort the data by month order
+    monthly_kpis['month'] = pd.Categorical(monthly_kpis['month'], categories=month_order, ordered=True)
+    monthly_kpis = monthly_kpis.sort_values('month')
+    
+    # Calculate additional KPIs
+    monthly_kpis['change%'] = monthly_kpis[main_variable].pct_change() * 100
+    monthly_kpis['progress%'] = (monthly_kpis[main_variable].cumsum() / monthly_kpis[main_variable].sum()) * 100
+    monthly_kpis['customers%'] = (monthly_kpis['customer_code'] / filtered_data['customer_code'].nunique()) * 100
+    monthly_kpis['%CTG. Consumption'] = (monthly_kpis['item_category'] / filtered_data['item_category'].nunique()) * 100
+    
+    # Create a DataFrame for display
+    display_df = pd.DataFrame({
+        'Month': monthly_kpis['month'],
+        'Sales': monthly_kpis[main_variable],
+        'Change%': monthly_kpis['change%'],
+        'Progress%': monthly_kpis['progress%'],
+        'Customers%': monthly_kpis['customers%'],
+        '%CTG. Consumption': monthly_kpis['%CTG. Consumption']
+    })
+    
+    # Set Month as index for better display
+    display_df.set_index('Month', inplace=True)
+
     return (total_sales, customer_count, total_weight, Cash_count, Credit_count,
             Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
-            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer), True
+            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df), True
 
 # Streamlit app
 st.sidebar.header('Filters')
@@ -367,60 +397,71 @@ if not search_found:
 else:
     (total_sales, customer_count, total_weight, Cash_count, Credit_count,
      Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
-     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = dashboard_data
+     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df) = dashboard_data
 
-# Layout with columns for summary statistics
-col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
+    # Layout with columns for summary statistics
+    col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
 
-with col1:
-    st.markdown(f"""
-    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-        <h4 style="margin: 0; font-size: 14px;">Total</h4>
-        <h2 style="margin: 0; font-size: 16px;">
-        {'SAR' if main_variable == 'total' else 'Kg'} {total_sales:,.0f}
-        </h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-        <h4 style="margin: 0; font-size: 14px;">Customer Count</h4>
-        <h2 style="margin: 0; font-size: 16px;">{customer_count:,}</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown(f"""
-    <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
-        <h4 style="margin: 0; font-size: 14px;">Payment Type</h4>
-        <h2 style="margin: 0; font-size: 16px;">Cash: {Cash_count:,} ({Cash_percentage:.1%})</h2>
-        <h2 style="margin: 0; font-size: 16px;">Credit: {Credit_count:,} ({Credit_percentage:.1%})</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Create tabs for charts
-tab1, tab2, tab3 = st.tabs(["Sales Overview", "Time Graphs", "Heatmaps"])
-
-with tab1:
-    col1, col2 = st.columns(2)
     with col1:
-        st.plotly_chart(fig_area, use_container_width=True)
+        st.markdown(f"""
+        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+            <h4 style="margin: 0; font-size: 14px;">Total</h4>
+            <h2 style="margin: 0; font-size: 16px;">
+            {'SAR' if main_variable == 'total' else 'Kg'} {total_sales:,.0f}
+            </h2>
+        </div>
+        """, unsafe_allow_html=True)
+
     with col2:
-        st.plotly_chart(fig_salesman, use_container_width=True)
+        st.markdown(f"""
+        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+            <h4 style="margin: 0; font-size: 14px;">Customer Count</h4>
+            <h2 style="margin: 0; font-size: 16px;">{customer_count:,}</h2>
+        </div>
+        """, unsafe_allow_html=True)
 
-with tab2:
-    st.plotly_chart(fig_time, use_container_width=True)
+    with col3:
+        st.markdown(f"""
+        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 12px; text-align: center;">
+            <h4 style="margin: 0; font-size: 14px;">Payment Type</h4>
+            <h2 style="margin: 0; font-size: 16px;">Cash: {Cash_count:,} ({Cash_percentage:.1%})</h2>
+            <h2 style="margin: 0; font-size: 16px;">Credit: {Credit_count:,} ({Credit_percentage:.1%})</h2>
+        </div>
+        """, unsafe_allow_html=True)
 
-with tab3:
-    heatmap_option = st.selectbox(
-        "Select Heatmap",
-        ["Item Category", "Item Description", "Customer"]
-    )
-    
-    if heatmap_option == "Item Category":
-        st.plotly_chart(fig_heatmap_item, use_container_width=True)
-    elif heatmap_option == "Item Description":
-        st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
-    else:  # Customer
-        st.plotly_chart(fig_heatmap_customer, use_container_width=True)
+    # Create tabs for charts
+    tab1, tab2, tab3, tab4 = st.tabs(["Sales Overview", "Time Graphs", "Heatmaps", "Salesman"])
+
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.plotly_chart(fig_area, use_container_width=True)
+        with col2:
+            st.plotly_chart(fig_salesman, use_container_width=True)
+
+    with tab2:
+        st.plotly_chart(fig_time, use_container_width=True)
+
+    with tab3:
+        heatmap_option = st.selectbox(
+            "Select Heatmap",
+            ["Item Category", "Item Description", "Customer"]
+        )
+        
+        if heatmap_option == "Item Category":
+            st.plotly_chart(fig_heatmap_item, use_container_width=True)
+        elif heatmap_option == "Item Description":
+            st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
+        else:  # Customer
+            st.plotly_chart(fig_heatmap_customer, use_container_width=True)
+
+    with tab4:
+        # Display the table
+        st.write("Monthly KPIs")
+        st.dataframe(display_df.style.format({
+            'Sales': '{:,.0f}',
+            'Change%': '{:+.2f}%',
+            'Progress%': '{:.2f}%',
+            'Customers%': '{:.2f}%',
+            '%CTG. Consumption': '{:.2f}%'
+        }))
