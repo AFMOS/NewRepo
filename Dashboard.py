@@ -52,7 +52,7 @@ quarter_map = {
 
 def apply_master_filter(df, search_term):
     if not search_term:
-        return df
+        return df, True
 
     search_term = search_term.lower()
     mask = pd.Series([False] * len(df))
@@ -62,7 +62,9 @@ def apply_master_filter(df, search_term):
         if col in df.columns:
             mask |= df[col].astype(str).str.lower().str.contains(search_term, regex=True)
     
-    return df[mask]
+    filtered_df = df[mask]
+    search_found = len(filtered_df) > 0
+    return filtered_df, search_found
 
 def generate_dashboard_title(search_term, selected_filters):
     title_parts = []
@@ -83,7 +85,10 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
                       selected_customer_categories, selected_salesmen, selected_item_categories,
                       selected_customer_names, selected_item_description, main_variable, search_term):
     # Apply master filter
-    filtered_data = apply_master_filter(data, search_term)
+    filtered_data, search_found = apply_master_filter(data, search_term)
+    
+    if not search_found:
+        return None, False  # Return None for the data and False for search_found
     
     # Further filtering based on other selections
     if selected_areas and selected_areas != "None":
@@ -316,7 +321,7 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
 
     return (total_sales, customer_count, total_weight, Cash_count, Credit_count,
             Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
-            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer)
+            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer), True
 
 # Streamlit app
 st.sidebar.header('Filters')
@@ -350,14 +355,19 @@ dashboard_title = generate_dashboard_title(search_term, selected_filters)
 st.markdown(f"""<h1 style="text-align: center;">📊 {dashboard_title}</h1>""", unsafe_allow_html=True)
 
 # Update dashboard based on selections
-(total_sales, customer_count, total_weight, Cash_count, Credit_count,
- Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
- fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = update_dashboard(
+dashboard_data, search_found = update_dashboard(
     selected_areas, selected_month, selected_quarter, 
     selected_customer_categories, selected_salesmen, selected_item_categories,
     selected_customer_names, selected_item_description,
     main_variable, search_term
 )
+
+if not search_found:
+    st.error("Search Not Found!")
+else:
+    (total_sales, customer_count, total_weight, Cash_count, Credit_count,
+     Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
+     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = dashboard_data
 
 # Layout with columns for summary statistics
 col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
