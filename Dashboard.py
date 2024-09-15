@@ -64,6 +64,21 @@ def apply_master_filter(df, search_term):
     
     return df[mask]
 
+def generate_dashboard_title(search_term, selected_filters):
+    title_parts = []
+    
+    if search_term:
+        title_parts.append(f'<span style="color: maroon;">"{search_term}"</span>')
+    
+    for filter_name, filter_value in selected_filters.items():
+        if filter_value and filter_value != "None":
+            title_parts.append(f'<span style="color: maroon;">{filter_value}</span>')
+    
+    if title_parts:
+        return f"{' - '.join(title_parts)} Breakdown"
+    else:
+        return "Sales Dashboard"
+
 def update_dashboard(selected_areas, selected_month, selected_quarter, 
                       selected_customer_categories, selected_salesmen, selected_item_categories,
                       selected_customer_names, selected_item_description, main_variable, search_term):
@@ -90,7 +105,7 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         filtered_data = filtered_data[filtered_data['item_description'] == selected_item_description]
 
     # Calculate summary statistics
-    total_sales = filtered_data[main_variable].sum()  # Calculate based on filtered data
+    total_sales = filtered_data[main_variable].sum()
     customer_count = filtered_data['customer_code'].nunique()
     total_weight = filtered_data['weight'].sum()
     
@@ -110,55 +125,79 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     sales_by_area = filtered_data.groupby('area')[main_variable].sum().reset_index()
     fig_area = px.pie(sales_by_area, values=main_variable, names='area', title='Sales by Area')
 
-    # Sales by Month Bar Chart
+    # Combined Time Graph (Monthly and Quarterly)
     sales_by_month = filtered_data.groupby('month')[main_variable].sum().reset_index()
     sales_by_month['month'] = pd.Categorical(sales_by_month['month'], categories=month_order, ordered=True)
     sales_by_month = sales_by_month.sort_values('month')
-
-    # Calculate percentage change
-    sales_by_month['Change %'] = sales_by_month[main_variable].pct_change() * 100
-    sales_by_month['Change %'] = sales_by_month['Change %'].fillna(0).round(1).astype(str) + '%'
-
-    # Round sales values
-    sales_by_month[main_variable] = sales_by_month[main_variable].round(0)
-
-    fig_month = px.bar(sales_by_month, y='month', x=main_variable, title='Sales by Month', text=main_variable, orientation='h')
-    fig_month.update_traces(
-        texttemplate='%{text:.0s}<br>%{customdata}', 
-        customdata=sales_by_month['Change %'],  # Adding percentage change
-        textposition='inside', 
-        textangle=0  # Horizontal text alignment
-    )
-    fig_month.update_layout(
-        xaxis_title='',
-        yaxis_title='',
-        title='Sales by Month'
-    )
-
-    # Sales by Quarter Bar Chart with Percentage Change
+    
     sales_by_quarter = filtered_data.copy()
     sales_by_quarter['quarter'] = sales_by_quarter['month'].apply(lambda x: next((q for q, months in quarter_map.items() if x in months), None))
     sales_by_quarter = sales_by_quarter.groupby('quarter')[main_variable].sum().reset_index()
     
-    # Calculate percentage change
-    sales_by_quarter = sales_by_quarter.sort_values('quarter')
-    sales_by_quarter['Change %'] = sales_by_quarter[main_variable].pct_change() * 100
-    sales_by_quarter['Change %'] = sales_by_quarter['Change %'].fillna(0).round(1).astype(str) + '%'
-    
-    fig_quarter = px.bar(sales_by_quarter, x='quarter', y=main_variable, title='Sales by Quarter', text=main_variable)
-    
-    # Update text to include percentage change without "Change" label
-    fig_quarter.update_traces(
-        texttemplate='%{text:.0s}<br>%{customdata}',
-        customdata=sales_by_quarter['Change %'],
-        textposition='inside'
+    fig_time = go.Figure()
+
+    # Add monthly data as bars
+    fig_time.add_trace(go.Bar(
+        x=sales_by_month['month'],
+        y=sales_by_month[main_variable],
+        name='Monthly Sales',
+        marker_color='rgba(55, 83, 109, 0.7)',
+        text=sales_by_month[main_variable].apply(lambda x: f'{x:,.0f}'),
+        textposition='inside',
+        textfont=dict(color='white'),
+    ))
+
+    # Calculate and add percentage change for monthly data
+    sales_by_month['pct_change'] = sales_by_month[main_variable].pct_change() * 100
+    for i, row in sales_by_month.iterrows():
+        fig_time.add_annotation(
+            x=row['month'],
+            y=row[main_variable],
+            text=f"{row['pct_change']:.1f}%" if not pd.isna(row['pct_change']) else "",
+            showarrow=False,
+            yshift=20,
+            font=dict(size=10, color='rgba(55, 83, 109, 1)')
+        )
+
+    # Add quarterly data as lines with markers
+    quarter_positions = {'Q1': 1, 'Q2': 4, 'Q3': 7, 'Q4': 10}
+    fig_time.add_trace(go.Scatter(
+        x=[month_order[quarter_positions[q]-1] for q in sales_by_quarter['quarter']],
+        y=sales_by_quarter[main_variable],
+        mode='lines+markers+text',
+        name='Quarterly Sales',
+        line=dict(color='rgba(255, 0, 0, 0.8)', width=3),
+        marker=dict(size=12, symbol='star', color='rgba(255, 0, 0, 0.8)'),
+        text=sales_by_quarter[main_variable].apply(lambda x: f'{x:,.0f}'),
+        textposition='top center',
+        textfont=dict(color='rgba(255, 0, 0, 1)'),
+    ))
+
+    # Calculate and add percentage change for quarterly data
+    sales_by_quarter['pct_change'] = sales_by_quarter[main_variable].pct_change() * 100
+    for i, row in sales_by_quarter.iterrows():
+        fig_time.add_annotation(
+            x=month_order[quarter_positions[row['quarter']]-1],
+            y=row[main_variable],
+            text=f"{row['pct_change']:.1f}%" if not pd.isna(row['pct_change']) else "",
+            showarrow=False,
+            yshift=30,
+            font=dict(size=10, color='rgba(255, 0, 0, 0.8)')
+        )
+
+    # Update layout
+    fig_time.update_layout(
+        title='Monthly and Quarterly Sales',
+        xaxis_title='Month',
+        yaxis_title=f'Sales ({main_variable.capitalize()})',
+        legend_title='Period',
+        hovermode="x unified",
+        barmode='overlay',
+        hoverlabel=dict(bgcolor="white", font_size=12),
+        margin=dict(l=50, r=50, t=80, b=50),
     )
-    
-    fig_quarter.update_layout(
-        xaxis_title='',
-        yaxis_title='',
-        title='Sales by Quarter'
-    )
+
+    fig_time.update_xaxes(tickangle=-45)
     
     # Sales by Salesman and Area Stacked Bar Chart
     sales_by_salesman_area = filtered_data.groupby(['salesman', 'area'])[main_variable].sum().reset_index()
@@ -176,131 +215,110 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
                           category_orders={'salesman': salesman_order},
                           text=main_variable)
     
-    fig_salesman.update_traces(texttemplate='%{text:.0s}', textposition='inside')  # Updated format to match weight
+    fig_salesman.update_traces(texttemplate='%{text:.0s}', textposition='inside')
     fig_salesman.update_layout(
         xaxis_title='',
         yaxis_title='',
-        xaxis=dict(tickangle=-45),  # Rotate x-axis labels for readability
-        legend_title='Area',  # Title for the legend
-        barmode='stack'  # Stack the bars
+        xaxis=dict(tickangle=-45),
+        legend_title='Area',
+        barmode='stack'
     )
     
     # Generate Item Category Heatmap
     pivot_table_item = filtered_data.pivot_table(index='item_category', columns='month', values=main_variable, aggfunc='sum')
-    
-    # Ensure columns are sorted by month order
     pivot_table_item = pivot_table_item.reindex(columns=month_order)
-    
-    # Sort rows by total value in descending order
     pivot_table_item['total'] = pivot_table_item.sum(axis=1)
     pivot_table_item = pivot_table_item.sort_values('total', ascending=True)
     pivot_table_item = pivot_table_item.drop('total', axis=1)
     
-    # Round the values and replace NaN with empty string
     rounded_values_item = pivot_table_item.round(0).fillna('') 
     text_values_item = rounded_values_item.astype(str)
     text_values_item = text_values_item.replace('0.0', '', regex=False)
     
-    # Create heatmap for Item Category using go.Heatmap
     fig_heatmap_item = go.Figure(data=go.Heatmap(
         z=pivot_table_item.values,
         x=pivot_table_item.columns,
         y=pivot_table_item.index,
-        colorscale='Brwnyl',  # New color scale
+        colorscale='Brwnyl',
         hoverongaps=False,
         text=text_values_item,
         texttemplate="%{text}",
-        showscale=False  # Hide the color scale (legend)
+        showscale=False
     ))
     
     fig_heatmap_item.update_layout(
         title='',
         xaxis_title='',
         yaxis_title='',
-        height=25 * len(pivot_table_item.index),  # Adjust height based on number of rows and desired row height
-        xaxis=dict(side='top')  # Move x-axis labels to the top
+        height=25 * len(pivot_table_item.index),
+        xaxis=dict(side='top')
     )
 
-    # Generate new Item Description Heatmap
+    # Generate Item Description Heatmap
     pivot_table_item_description = filtered_data.pivot_table(index='item_description', columns='month', values=main_variable, aggfunc='sum')
-    
-    # Ensure columns are sorted by month order
     pivot_table_item_description = pivot_table_item_description.reindex(columns=month_order)
-    
-    # Sort rows by total value in descending order
     pivot_table_item_description['total'] = pivot_table_item_description.sum(axis=1)
     pivot_table_item_description = pivot_table_item_description.sort_values('total', ascending=True)
     pivot_table_item_description = pivot_table_item_description.drop('total', axis=1)
     
-    # Round the values and replace NaN with empty string
     rounded_values_item_description = pivot_table_item_description.round(0).fillna('')
     text_values_item_description = rounded_values_item_description.astype(str)
     text_values_item_description = text_values_item_description.replace('0.0', '', regex=False)
     
-    # Create heatmap for Item Description using go.Heatmap
     fig_heatmap_item_description = go.Figure(data=go.Heatmap(
         z=pivot_table_item_description.values,
         x=pivot_table_item_description.columns,
         y=pivot_table_item_description.index,
-        colorscale='Brwnyl',  # New color scale
+        colorscale='Brwnyl',
         hoverongaps=False,
         text=text_values_item_description,
         texttemplate="%{text}",
-        showscale=False  # Hide the color scale (legend)
+        showscale=False
     ))
     
     fig_heatmap_item_description.update_layout(
         title='',
         xaxis_title='',
         yaxis_title='',
-        height=20 * len(pivot_table_item_description.index),  # Adjust height based on number of rows and desired row height
-        xaxis=dict(side='top')  # Move x-axis labels to the top
+        height=20 * len(pivot_table_item_description.index),
+        xaxis=dict(side='top')
     )
 
     # Generate Customer Heatmap
     pivot_table_customer = filtered_data.pivot_table(index='customer_name', columns='month', values=main_variable, aggfunc='sum')
-    
-    # Ensure columns are sorted by month order
     pivot_table_customer = pivot_table_customer.reindex(columns=month_order)
-    
-    # Sort rows by total value in descending order
     pivot_table_customer['total'] = pivot_table_customer.sum(axis=1)
     pivot_table_customer = pivot_table_customer.sort_values('total', ascending=True)
     pivot_table_customer = pivot_table_customer.drop('total', axis=1)
     
-    # Round the values and replace NaN with empty string
     rounded_values_customer = pivot_table_customer.round(0).fillna('')
     text_values_customer = rounded_values_customer.astype(str)
     text_values_customer = text_values_customer.replace('0.0', '', regex=False)
     
-    # Create heatmap for Customer using go.Heatmap
     fig_heatmap_customer = go.Figure(data=go.Heatmap(
         z=pivot_table_customer.values,
         x=pivot_table_customer.columns,
         y=pivot_table_customer.index,
-        colorscale='Brwnyl',  # New color scale
+        colorscale='Brwnyl',
         hoverongaps=False,
         text=text_values_customer,
         texttemplate="%{text}",
-        showscale=False  # Hide the color scale (legend)
+        showscale=False
     ))
     
     fig_heatmap_customer.update_layout(
         title='',
         xaxis_title='',
         yaxis_title='',
-        height=20 * len(pivot_table_customer.index),  # Adjust height based on number of rows and desired row height
-        xaxis=dict(side='top')  # Move x-axis labels to the top
+        height=20 * len(pivot_table_customer.index),
+        xaxis=dict(side='top')
     )
 
     return (total_sales, customer_count, total_weight, Cash_count, Credit_count,
-            Cash_percentage, Credit_percentage, fig_area, fig_month, fig_quarter, fig_salesman, 
+            Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
             fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer)
 
 # Streamlit app
-st.markdown("""<h1 style="text-align: center;">📊 Sales Dashboard</h1>""", unsafe_allow_html=True)
-
-# Filters aligned to the right
 st.sidebar.header('Filters')
 
 # Add master search filter
@@ -315,9 +333,25 @@ selected_item_categories = st.sidebar.selectbox('Select Item Category', options=
 selected_customer_names = st.sidebar.selectbox('Select Customer Name', options=['None'] + list(data['customer_name'].unique()))
 selected_item_description = st.sidebar.selectbox('Select Item Description', options=['None'] + list(data['item_description'].unique()))
 
+# Generate dynamic dashboard title
+selected_filters = {
+    'Area': selected_areas,
+    'Month': selected_month,
+    'Quarter': selected_quarter,
+    'Customer Category': selected_customer_categories,
+    'Salesman': selected_salesmen,
+    'Item Category': selected_item_categories,
+    'Customer Name': selected_customer_names,
+    'Item Description': selected_item_description
+}
+dashboard_title = generate_dashboard_title(search_term, selected_filters)
+
+# Display the dynamic dashboard title
+st.markdown(f"""<h1 style="text-align: center;">📊 {dashboard_title}</h1>""", unsafe_allow_html=True)
+
 # Update dashboard based on selections
 (total_sales, customer_count, total_weight, Cash_count, Credit_count,
- Cash_percentage, Credit_percentage, fig_area, fig_month, fig_quarter, fig_salesman, 
+ Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
  fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer) = update_dashboard(
     selected_areas, selected_month, selected_quarter, 
     selected_customer_categories, selected_salesmen, selected_item_categories,
@@ -355,28 +389,28 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-# Display charts side by side and centered
-st.subheader('')
-col1, col2, col3, col4 = st.columns([3, 3, 3, 3])  # Adjust column widths to be equal
+# Create tabs for charts
+tab1, tab2, tab3 = st.tabs(["Sales Overview", "Time Graphs", "Heatmaps"])
 
-with col1:
-    st.plotly_chart(fig_area, use_container_width=True)
+with tab1:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(fig_area, use_container_width=True)
+    with col2:
+        st.plotly_chart(fig_salesman, use_container_width=True)
 
-with col2:
-    st.plotly_chart(fig_month, use_container_width=True)
+with tab2:
+    st.plotly_chart(fig_time, use_container_width=True)
 
-with col3:
-    st.plotly_chart(fig_quarter, use_container_width=True)
-
-with col4:
-    st.plotly_chart(fig_salesman, use_container_width=True)
-
-# Add expand/collapse sections for heatmaps
-with st.expander("Item Category Heatmap", expanded=False):
-    st.plotly_chart(fig_heatmap_item, use_container_width=True)
-
-with st.expander("Item Description Heatmap", expanded=False):
-    st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
-
-with st.expander("Customer Heatmap", expanded=False):
-    st.plotly_chart(fig_heatmap_customer, use_container_width=True)
+with tab3:
+    heatmap_option = st.selectbox(
+        "Select Heatmap",
+        ["Item Category", "Item Description", "Customer"]
+    )
+    
+    if heatmap_option == "Item Category":
+        st.plotly_chart(fig_heatmap_item, use_container_width=True)
+    elif heatmap_option == "Item Description":
+        st.plotly_chart(fig_heatmap_item_description, use_container_width=True)
+    else:  # Customer
+        st.plotly_chart(fig_heatmap_customer, use_container_width=True)
