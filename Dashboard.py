@@ -351,12 +351,11 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     
     monthly_kpis['New Customer'] = new_customers
 
-   # Calculate Newly Listed (new approach)
+    # Calculate Newly Listed Items (new approach)
     newly_listed = []
-    total_newly_listed = 0
     all_combinations = set()
 
-    for month in month_order:
+    for i, month in enumerate(month_order):
         month_data = filtered_data[filtered_data['month'] == month]
         
         # Get unique item-customer combinations for this month
@@ -366,40 +365,33 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         new_combinations = month_combinations - all_combinations
         month_newly_listed = len(new_combinations)
         
-        newly_listed.append(month_newly_listed)
-        total_newly_listed += month_newly_listed
+        # Set first month's value to 0
+        if i == 0:
+            newly_listed.append(0)
+        else:
+            newly_listed.append(month_newly_listed)
         
         # Update all combinations
         all_combinations.update(month_combinations)
     
-    monthly_kpis['Newly Listed'] = newly_listed
+    monthly_kpis['Newly Listed Items'] = newly_listed
 
-    # Print total newly listed for verification
-    print(f"Total Newly Listed: {total_newly_listed}")
-
-    # Print additional information for debugging
-    print(f"Total rows in filtered_data: {len(filtered_data)}")
-    print(f"Number of unique customers: {filtered_data['customer_code'].nunique()}")
-    print(f"Number of unique item codes: {filtered_data['item_code'].nunique()}")
-    print(f"Number of unique customer-item combinations: {len(all_combinations)}")
-    print(f"Months present in data: {month_order}")
-    
     # Calculate additional KPIs
-    monthly_kpis['change%'] = monthly_kpis[main_variable].pct_change() * 100
-    monthly_kpis['progress%'] = (monthly_kpis[main_variable].cumsum() / monthly_kpis[main_variable].sum()) * 100
-    monthly_kpis['customers%'] = (monthly_kpis['customer_code'] / filtered_data['customer_code'].nunique()) * 100
-    monthly_kpis['%CTG. Consumption'] = (monthly_kpis['item_category'] / filtered_data['item_category'].nunique()) * 100
+    monthly_kpis['M.Change%'] = monthly_kpis[main_variable].pct_change() * 100
+    monthly_kpis['Progress%'] = (monthly_kpis[main_variable].cumsum() / monthly_kpis[main_variable].sum()) * 100
+    monthly_kpis['Customers Delt %'] = (monthly_kpis['customer_code'] / filtered_data['customer_code'].nunique()) * 100
+    monthly_kpis['CTG Delt %'] = (monthly_kpis['item_category'] / filtered_data['item_category'].nunique()) * 100
     
     # Create a DataFrame for display
     display_df = pd.DataFrame({
         'Month': monthly_kpis['month'],
         'Sales': monthly_kpis[main_variable],
         'New Customers': monthly_kpis['New Customer'],
-        'Newly Listed': monthly_kpis['Newly Listed'],
-        'Change%': monthly_kpis['change%'],
-        'Progress%': monthly_kpis['progress%'],
-        'Customers%': monthly_kpis['customers%'],
-        '%CTG. Consumption': monthly_kpis['item_category'] / filtered_data['item_category'].nunique() * 100
+        'Newly Listed Items': monthly_kpis['Newly Listed Items'],
+        'M.Change%': monthly_kpis['M.Change%'],
+        'Progress%': monthly_kpis['Progress%'],
+        'Customers Delt %': monthly_kpis['Customers Delt %'],
+        'CTG Delt %': monthly_kpis['CTG Delt %']
     })
     
     #Set Month as index for better display
@@ -520,11 +512,9 @@ else:
             st.dataframe(display_df.style.format({
                 'Sales': '{:,.0f}',
                 'New Customers': '{:,.0f}',
-                'Newly Listed': '{:.0f}',
-                'Change%': '{:+.2f}%',
+                'Newly Listed Items': '{:.0f}',
+                'M.Change%': '{:+.2f}%',
                 'Progress%': '{:.2f}%',
-                'Customers%': '{:.2f}%',
-                '%CTG. Consumption': '{:.2f}%'
+                'Customers Delt %': '{:.2f}%',
+                'CTG Delt %': '{:.2f}%'
             }))
-        
-        
