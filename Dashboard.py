@@ -3,6 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import re
+from io import BytesIO
 
 # Set the page configuration to wide mode
 st.set_page_config(layout="wide")
@@ -300,6 +301,7 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     pivot_table_customer = pivot_table_customer.reindex(columns=month_order)
     pivot_table_customer['total'] = pivot_table_customer.sum(axis=1)
     pivot_table_customer = pivot_table_customer.sort_values('total', ascending=True)
+    pivot_table_customer = pivot_table_customer.sort_values('total', ascending=True)
     pivot_table_customer = pivot_table_customer.drop('total', axis=1)
     
     rounded_values_customer = pivot_table_customer.round(0).fillna('')
@@ -339,21 +341,30 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
     # Calculate new customers
     all_customers = set()
     new_customers = []
-    for i, (_, row) in enumerate(monthly_kpis.iterrows()):
-        if i == 0:  # First month (January)
-            new_customers.append(0)
-            all_customers.update(filtered_data[filtered_data['month'] == row['month']]['customer_code'])
-        else:
-            month_customers = set(filtered_data[filtered_data['month'] == row['month']]['customer_code'])
-            new_month_customers = month_customers - all_customers
-            new_customers.append(len(new_month_customers))
-            all_customers.update(month_customers)
+    new_customers_data = []
+    for i, month in enumerate(month_order):
+        month_data = filtered_data[filtered_data['month'] == month]
+        month_customers = set(month_data['customer_code'])
+        new_month_customers = month_customers - all_customers
+        new_customers.append(len(new_month_customers))
+        
+        # Collect data for new customers
+        for customer in new_month_customers:
+            customer_data = month_data[month_data['customer_code'] == customer]
+            new_customers_data.append({
+                'customer_code': customer,
+                'month': month,
+                'total': customer_data[main_variable].sum()
+            })
+        
+        all_customers.update(month_customers)
     
     monthly_kpis['New Customer'] = new_customers
 
-    # Calculate Newly Listed Items (new approach)
+    # Calculate Newly Listed Items
     newly_listed = []
     all_combinations = set()
+    newly_listed_items_data = []
 
     for i, month in enumerate(month_order):
         month_data = filtered_data[filtered_data['month'] == month]
@@ -365,6 +376,16 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         new_combinations = month_combinations - all_combinations
         month_newly_listed = len(new_combinations)
         
+        # Collect data for newly listed items
+        for customer_code, item_code in new_combinations:
+            item_data = month_data[(month_data['customer_code'] == customer_code) & (month_data['item_code'] == item_code)]
+            newly_listed_items_data.append({
+                'customer_code': customer_code,
+                'month': month,
+                'item_code': item_code,
+                'total': item_data[main_variable].sum()
+            })
+        
         # Set first month's value to 0
         if i == 0:
             newly_listed.append(0)
@@ -375,6 +396,10 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
         all_combinations.update(month_combinations)
     
     monthly_kpis['Newly Listed Items'] = newly_listed
+
+    # Create DataFrames for export
+    new_customers_df = pd.DataFrame(new_customers_data)
+    newly_listed_items_df = pd.DataFrame(newly_listed_items_data)
 
     # Calculate additional KPIs
     monthly_kpis['M.Change%'] = monthly_kpis[main_variable].pct_change() * 100
@@ -399,7 +424,8 @@ def update_dashboard(selected_areas, selected_month, selected_quarter,
 
     return (total_sales, customer_count, total_weight, Cash_count, Credit_count,
             Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
-            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df), True
+            fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df,
+            new_customers_df, newly_listed_items_df), True
 
 # Streamlit app
 st.sidebar.header('Filters')
@@ -445,7 +471,8 @@ if not search_found:
 else:
     (total_sales, customer_count, total_weight, Cash_count, Credit_count,
      Cash_percentage, Credit_percentage, fig_area, fig_time, fig_salesman, 
-     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df) = dashboard_data
+     fig_heatmap_item, fig_heatmap_item_description, fig_heatmap_customer, display_df,
+     new_customers_df, newly_listed_items_df) = dashboard_data
 
     # Layout with columns for summary statistics
     col1, col2, col3 = st.columns(3)  # Adjust to have 3 equal-width columns
@@ -507,14 +534,43 @@ else:
         # Display the table
         st.write("Monthly KPIs")
         
-        # Use an expander to show/hide the full table
-        with st.expander("Full Table", expanded=False):
-            st.dataframe(display_df.style.format({
-                'Sales': '{:,.0f}',
-                'New Customers': '{:,.0f}',
-                'Newly Listed Items': '{:.0f}',
-                'M.Change%': '{:+.2f}%',
-                'Progress%': '{:.2f}%',
-                'Customers Delt %': '{:.2f}%',
-                'CTG Delt %': '{:.2f}%'
-            }))
+        # Use an expander to show/hide the full table and export buttons
+        with st.expander("Full Table and Export Options", expanded=False):
+            col1, col2 = st.columns([3, 1])  # Adjust the ratio as needed
+            
+            with col1:
+                st.dataframe(display_df.style.format({
+                    'Sales': '{:,.0f}',
+                    'New Customers': '{:,.0f}',
+                    'Newly Listed Items': '{:.0f}',
+                    'M.Change%': '{:+.2f}%',
+                    'Progress%': '{:.2f}%',
+                    'Customers Delt %': '{:.2f}%',
+                    'CTG Delt %': '{:.2f}%'
+                }))
+            
+            with col2:
+                st.write("Export Options")
+                if not new_customers_df.empty:
+                    csv = new_customers_df.to_csv(index=False)
+                    st.download_button(
+                        label="Export New Customers",
+                        data=csv,
+                        file_name="new_customers.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.write("No new customers data available for export.")
+                
+                st.write("")  # Add some space between buttons
+                
+                if not newly_listed_items_df.empty:
+                    csv = newly_listed_items_df.to_csv(index=False)
+                    st.download_button(
+                        label="Export Newly Listed Items",
+                        data=csv,
+                        file_name="newly_listed_items.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.write("No newly listed items data available for export.")
